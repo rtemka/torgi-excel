@@ -57,7 +57,13 @@ pub fn send_when_modify(file_path: &str) {
 
             last_mod_time = time;
 
-            let active_state_records = excel::get_active_state_json().unwrap();
+            let active_state_records = match excel::get_active_state_json() {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("{:?}", &e);
+                    return;
+                }
+            };
             let res = client
                 .post(crate::APP_URL)
                 .header(CONTENT_TYPE, "application/json")
