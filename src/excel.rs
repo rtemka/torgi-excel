@@ -31,12 +31,7 @@ const WORKBOOK_MAX_ROWS: usize = 7000;
 pub fn print_active_state_json() -> Result<(), WorkbookError> {
     let mut workbook = open_wb()?;
 
-    let named_ranges = named_ranges(&workbook);
-
-    let named_cols = named_cols(&named_ranges);
-
-    if let Some(Ok(range)) = workbook.worksheet_range(&named_ranges[0].sheet) {
-        let purches = active_state_cells(range, named_cols);
+    if let Some(purches) = active_purchases(&mut workbook) {
         for p in purches {
             let j = serde_json::to_string(&p).map_err(|_| WorkbookError::JsonSerializeError)?;
             println!("{}", &j);
@@ -49,12 +44,7 @@ pub fn print_active_state_json() -> Result<(), WorkbookError> {
 pub fn print_active_state() -> Result<(), WorkbookError> {
     let mut workbook = open_wb()?;
 
-    let named_ranges = named_ranges(&workbook);
-
-    let named_cols = named_cols(&named_ranges);
-
-    if let Some(Ok(range)) = workbook.worksheet_range(&named_ranges[0].sheet) {
-        let purches = active_state_cells(range, named_cols);
+    if let Some(purches) = active_purchases(&mut workbook) {
         for p in purches {
             println!(
                 "rn:{:?} ps:{:?} reg:{:?} ct:{:?} status:{:?} est:{:?} bid_date:{:?} bid_time{:?}",
@@ -69,45 +59,50 @@ pub fn print_active_state() -> Result<(), WorkbookError> {
             );
         }
     }
+
     Ok(())
 }
 
-pub fn get_active_state_json() -> Result<String, WorkbookError> {
+pub fn get_active_state_json() -> Result<Option<String>, WorkbookError> {
     let mut workbook = open_wb()?;
 
-    let named_ranges = named_ranges(&workbook);
-
-    let named_cols = named_cols(&named_ranges);
-
-    let mut json = String::new();
-
-    if let Some(Ok(range)) = workbook.worksheet_range(&named_ranges[0].sheet) {
-        let purches = active_state_cells(range, named_cols);
-
-        json = serde_json::to_string(&purches).map_err(|_| WorkbookError::JsonSerializeError)?;
+    if let Some(purches) = active_purchases(&mut workbook) {
+        Ok(Some(
+            serde_json::to_string(&purches).map_err(|_| WorkbookError::JsonSerializeError)?,
+        ))
+    } else {
+        Ok(None)
     }
-    Ok(json)
 }
 
 #[cfg(test)]
-pub fn get_active_state() -> Result<Vec<Purchase>, WorkbookError> {
+pub fn get_active_state() -> Result<Option<Vec<Purchase>>, WorkbookError> {
     let mut workbook = open_wb()?;
 
-    let named_ranges = named_ranges(&workbook);
-
-    let named_cols = named_cols(&named_ranges);
-
-    let mut purches: Vec<Purchase> = Vec::new();
-
-    if let Some(Ok(range)) = workbook.worksheet_range(&named_ranges[0].sheet) {
-        purches = active_state_cells(range, named_cols);
-    }
-    Ok(purches)
+    Ok(active_purchases(&mut workbook))
 }
 
 fn open_wb() -> Result<Xlsx<BufReader<File>>, WorkbookError> {
     let path = Path::new(crate::WORKBOOK_PATH);
     Ok(open_workbook(path).map_err(|x| WorkbookError::XlsxError(x))?)
+}
+
+fn active_purchases(workbook: &mut Xlsx<BufReader<File>>) -> Option<Vec<Purchase>> {
+    let named_ranges = named_ranges(&workbook);
+
+    let named_cols = named_cols(&named_ranges);
+
+    match workbook.worksheet_range(&named_ranges[0].sheet) {
+        Some(Ok(range)) => {
+            let purches = active_state_cells(range, named_cols);
+            if purches.is_empty() {
+                None
+            } else {
+                Some(purches)
+            }
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug)]
@@ -293,18 +288,13 @@ fn named_cols(named_ranges: &Vec<NamedRange>) -> NamedCols {
 }
 
 fn active_state_cells(rng: Range<DataType>, cols: NamedCols) -> Vec<Purchase> {
-    let mut active_cells: Vec<Purchase> = Vec::new();
-
-    let result = rng
-        .rows()
+    rng.rows()
         .take(WORKBOOK_MAX_ROWS)
         .filter(|r| match &r[cols.status_col] {
             DataType::String(s) => is_active_state(&s),
             _ => false,
-        });
-
-    for r in result {
-        let purch = Purchase {
+        })
+        .map(|r| Purchase {
             registry_number: r[cols.registry_number_col]
                 .get_string()
                 .unwrap_or_default()
@@ -331,12 +321,8 @@ fn active_state_cells(rng: Range<DataType>, cols: NamedCols) -> Vec<Purchase> {
                 .get_string()
                 .unwrap_or_default()
                 .to_owned(),
-        };
-
-        active_cells.push(purch);
-    }
-
-    active_cells
+        })
+        .collect::<Vec<Purchase>>()
 }
 
 fn is_expectable(s: &str) -> bool {
@@ -372,23 +358,30 @@ fn is_active_state(s: &str) -> bool {
 
 mod tests {
 
+    use super::*;
+
     #[test]
     fn test_print_active_state() {
-        assert!(super::print_active_state().is_ok());
+        assert!(print_active_state().is_ok());
     }
 
     #[test]
     fn test_print_active_state_json() {
-        assert!(super::print_active_state_json().is_ok());
+        assert!(print_active_state_json().is_ok());
     }
 
     #[test]
     fn test_get_active_state_json() {
-        assert!(super::get_active_state_json().is_ok());
+        assert!(get_active_state_json().is_ok());
     }
 
     #[test]
     fn test_get_active_state() {
-        assert!(super::get_active_state().is_ok());
+        assert!(get_active_state().is_ok());
+    }
+
+    #[test]
+    fn test_open_wb() {
+        assert!(open_wb().is_ok());
     }
 }
