@@ -11,7 +11,7 @@ use std::{
 
 use crate::excel;
 
-/// Deamon sleep interval in seconds
+/// Daemon sleep interval in seconds
 const TIME_TO_SLEEP: u64 = 10 * 60;
 
 const TEMP_FILE_PATH: &str = "temp.json";
@@ -53,7 +53,7 @@ fn send(client: &Client, json: String) -> Result<(), reqwest::Error> {
     }
 }
 
-pub fn watch(file_path: &str) -> Result<(), DeamonError> {
+pub fn watch(file_path: &str) -> Result<(), DaemonError> {
     let path = Path::new(file_path);
     let temp_path = Path::new(TEMP_FILE_PATH);
 
@@ -101,28 +101,28 @@ pub fn watch(file_path: &str) -> Result<(), DeamonError> {
 }
 
 #[derive(Debug)]
-pub enum DeamonError {
+pub enum DaemonError {
     IoError(std::io::Error),
     WorkBookError(excel::WorkbookError),
 }
 
-impl From<std::io::Error> for DeamonError {
+impl From<std::io::Error> for DaemonError {
     fn from(error: std::io::Error) -> Self {
-        DeamonError::IoError(error)
+        DaemonError::IoError(error)
     }
 }
 
-impl From<excel::WorkbookError> for DeamonError {
+impl From<excel::WorkbookError> for DaemonError {
     fn from(error: excel::WorkbookError) -> Self {
-        DeamonError::WorkBookError(error)
+        DaemonError::WorkBookError(error)
     }
 }
 
-impl fmt::Display for DeamonError {
+impl fmt::Display for DaemonError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DeamonError::WorkBookError(e) => write!(f, "{:?}", &e),
-            DeamonError::IoError(e) => write!(f, "{:?}", &e),
+            DaemonError::WorkBookError(e) => write!(f, "{:?}", &e),
+            DaemonError::IoError(e) => write!(f, "{:?}", &e),
         }
     }
 }

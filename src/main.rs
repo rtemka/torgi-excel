@@ -1,4 +1,4 @@
-mod deamon;
+mod daemon;
 mod excel;
 mod simple_time;
 use env_logger;
@@ -16,7 +16,7 @@ fn enable_logger() {
 
 fn main() {
     enable_logger();
-    match deamon::watch(WORKBOOK_PATH) {
+    match daemon::watch(WORKBOOK_PATH) {
         Ok(()) => info!("done"),
         Err(e) => error!("{:?}", &e),
     };
