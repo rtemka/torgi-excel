@@ -2,6 +2,7 @@ use crate::simple_time::Moment;
 use calamine::{open_workbook, DataType, Range, Reader, Xlsx, XlsxError};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fmt,
     fs::File,
     io::BufReader,
@@ -32,6 +33,7 @@ const WINNER_PRICE: &str = "Сумма_выигранного_лота";
 const PARTICIPANTS: &str = "Участники";
 const EMPTY: &str = "";
 const STATUS_GO: &str = "идем";
+const STATUS_NOT_GO: &str = "не идем";
 const STATUS_ADMITTED: &str = "допущены";
 const STATUS_APPLY: &str = "заявлены";
 const STATUS_WIN: &str = "выиграли";
@@ -44,23 +46,96 @@ const EXCEL_UNIX_EPOCH: u64 = 25569;
 const HOW_FAR_IN_PAST_DAYS: u64 = 16;
 const FILE_UTC_TIME_OFFSET: &str = "+03:00";
 
+type ExcelResult<T> = std::result::Result<T, WorkbookError>;
+
+#[derive(Debug)]
+pub enum WorkbookError {
+    InvalidColumnNameError(String),
+    XlsxError(XlsxError),
+    JsonSerializeError(serde_json::Error),
+}
+
+impl From<serde_json::Error> for WorkbookError {
+    fn from(error: serde_json::Error) -> Self {
+        WorkbookError::JsonSerializeError(error)
+    }
+}
+
+impl fmt::Display for WorkbookError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            WorkbookError::InvalidColumnNameError(s) => write!(f, "invalid column name: {:?}", &s),
+            WorkbookError::XlsxError(e) => write!(f, "{:?}", &e),
+            WorkbookError::JsonSerializeError(e) => write!(f, "cannot serialize struct {:?}", e),
+        }
+    }
+}
+
 #[cfg(test)]
-pub fn print_active_state_json() -> Result<(), WorkbookError> {
+pub fn print_active_state_json() -> ExcelResult<()> {
     let mut workbook = open_wb()?;
 
     if let Some(purches) = active_purchases(&mut workbook) {
         println!("{}", purches.len());
         for p in purches {
-            let j =
-                serde_json::to_string_pretty(&p).map_err(|_| WorkbookError::JsonSerializeError)?;
+            let j = serde_json::to_string_pretty(&p)?;
             println!("{}", &j);
         }
     }
     Ok(())
 }
 
+pub fn active_state_json() -> ExcelResult<Option<String>> {
+    let mut workbook = open_wb()?;
+
+    if let Some(purches) = active_purchases(&mut workbook) {
+        Ok(Some(serde_json::to_string(&purches)?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn active_state_json_compared(old: &str) -> ExcelResult<Option<String>> {
+    let mut workbook = open_wb()?;
+
+    let old_purches: Vec<Purchase> = serde_json::from_str(old)?;
+    if old_purches.len() == 0 {
+        return Ok(None);
+    }
+
+    let mut old_purches_map: HashMap<String, Purchase> = HashMap::with_capacity(old_purches.len());
+    for p in old_purches.into_iter() {
+        old_purches_map.insert(p.registry_number.clone(), p);
+    }
+
+    match active_purchases(&mut workbook) {
+        Some(act_purches) => {
+            let result = check_changes(old_purches_map, act_purches);
+            Ok(Some(serde_json::to_string(&result)?))
+        }
+        None => Ok(None),
+    }
+}
+
+fn check_changes(mut old: HashMap<String, Purchase>, new: Vec<Purchase>) -> Vec<Purchase> {
+    let mut result: Vec<Purchase> = Vec::new();
+
+    for p in new.into_iter() {
+        match old.remove(&p.registry_number) {
+            Some(v) if v == p => continue,
+            _ => result.push(p),
+        }
+    }
+    for (_, mut p) in old.into_iter() {
+        p.status = STATUS_NOT_GO.to_string();
+        result.push(p);
+    }
+
+    result
+}
+
 #[cfg(test)]
-pub fn print_active_state() -> Result<(), WorkbookError> {
+pub fn print_active_state() -> ExcelResult<()> {
     let mut workbook = open_wb()?;
 
     if let Some(purches) = active_purchases(&mut workbook) {
@@ -81,26 +156,14 @@ pub fn print_active_state() -> Result<(), WorkbookError> {
     Ok(())
 }
 
-pub fn get_active_state_json() -> Result<Option<String>, WorkbookError> {
-    let mut workbook = open_wb()?;
-
-    if let Some(purches) = active_purchases(&mut workbook) {
-        Ok(Some(
-            serde_json::to_string(&purches).map_err(|_| WorkbookError::JsonSerializeError)?,
-        ))
-    } else {
-        Ok(None)
-    }
-}
-
 #[cfg(test)]
-pub fn get_active_state() -> Result<Option<Vec<Purchase>>, WorkbookError> {
+pub fn active_state() -> ExcelResult<Option<Vec<Purchase>>> {
     let mut workbook = open_wb()?;
 
     Ok(active_purchases(&mut workbook))
 }
 
-fn open_wb() -> Result<Xlsx<BufReader<File>>, WorkbookError> {
+fn open_wb() -> ExcelResult<Xlsx<BufReader<File>>> {
     let path = Path::new(crate::WORKBOOK_PATH);
     Ok(open_workbook(path).map_err(|x| WorkbookError::XlsxError(x))?)
 }
@@ -123,30 +186,10 @@ fn active_purchases(workbook: &mut Xlsx<BufReader<File>>) -> Option<Vec<Purchase
     }
 }
 
-#[derive(Debug)]
-pub enum WorkbookError {
-    InvalidColumnNameError(String),
-    XlsxError(XlsxError),
-    JsonSerializeError,
-    #[allow(dead_code)]
-    IoError(std::io::Error),
-}
-
 enum ColumnPosition {
     Left = 0,
     #[allow(dead_code)]
     Right = 1,
-}
-
-impl fmt::Display for WorkbookError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            WorkbookError::InvalidColumnNameError(s) => write!(f, "invalid column name: {:?}", &s),
-            WorkbookError::XlsxError(e) => write!(f, "{:?}", &e),
-            WorkbookError::JsonSerializeError => write!(f, "cannot serialize struct"),
-            WorkbookError::IoError(e) => write!(f, "{:?}", &e),
-        }
-    }
 }
 
 #[derive(Default, Debug)]
@@ -195,6 +238,22 @@ pub struct Purchase {
     winner: String,
     winner_price: f64,
     participants: String,
+}
+
+impl PartialEq for Purchase {
+    fn eq(&self, other: &Self) -> bool {
+        self.registry_number == other.registry_number
+            && self.collecting_datetime == other.collecting_datetime
+            && self.approval_datetime == other.approval_datetime
+            && self.bidding_datetime == other.bidding_datetime
+            && self.region == other.region
+            && self.status == other.status
+            && self.estimation as i64 == other.estimation as i64
+            && self.our_participants == other.our_participants
+            && self.winner == other.winner
+            && self.winner_price as i64 == other.winner_price as i64
+            && self.participants == other.participants
+    }
 }
 
 struct NamedRange<'a> {
@@ -255,7 +314,7 @@ impl NamedRange<'_> {
             .replace("$", "")
     }
 
-    pub fn col_num(&self, cp: ColumnPosition) -> Result<usize, WorkbookError> {
+    pub fn col_num(&self, cp: ColumnPosition) -> ExcelResult<usize> {
         let col_name = self.col_name(cp);
 
         if col_name.len() == 0 {
@@ -340,6 +399,7 @@ fn named_cols(named_ranges: &Vec<NamedRange>) -> NamedCols {
 
 fn active_state_cells(rng: Range<DataType>, cols: NamedCols) -> Vec<Purchase> {
     let cut_off_date = today_in_excel_date() - HOW_FAR_IN_PAST_DAYS as f64;
+
     let rows = rng.rows().take(WORKBOOK_MAX_ROWS).filter(|r| {
         match (&r[cols.status], &r[cols.bidding_date]) {
             (DataType::String(s), DataType::DateTime(dt)) => {
@@ -348,7 +408,9 @@ fn active_state_cells(rng: Range<DataType>, cols: NamedCols) -> Vec<Purchase> {
             _ => false,
         }
     });
+
     let mut purches: Vec<Purchase> = Vec::new();
+
     for r in rows {
         let mut bid_datetime = r[cols.bidding_datetime].get_float().unwrap_or_default();
         let bid_date = r[cols.bidding_date].get_float().unwrap_or_default();
@@ -510,13 +572,13 @@ mod tests {
     }
 
     #[test]
-    fn test_get_active_state_json() {
-        assert!(get_active_state_json().is_ok());
+    fn test_active_state_json() {
+        assert!(active_state_json().is_ok());
     }
 
     #[test]
-    fn test_get_active_state() {
-        assert!(get_active_state().is_ok());
+    fn test_active_state() {
+        assert!(active_state().is_ok());
     }
 
     #[test]
