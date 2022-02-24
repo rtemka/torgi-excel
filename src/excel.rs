@@ -39,15 +39,24 @@ const STATUS_APPLY: &str = "заявлены";
 const STATUS_WIN: &str = "выиграли";
 const STATUS_LOSS: &str = "не выиграли";
 const NAMED_RANGES_COUNT: usize = 20;
-const TOTAL_COLUMNS: u32 = 16384;
 const RADIX: u32 = 36;
+
+const TOTAL_COLUMNS: u32 = 16384;
+// we don't expect that workbook
+// has a number of active rows greater than that
 const WORKBOOK_MAX_ROWS: usize = 7000;
-const EXCEL_UNIX_EPOCH: u64 = 25569;
+// maximum days that we want to look in past
+// searching for rows
 const HOW_FAR_IN_PAST_DAYS: u64 = 16;
+
+// 01.01.1970 in excel representation
+const EXCEL_UNIX_EPOCH: u64 = 25569;
 const FILE_UTC_TIME_OFFSET: &str = "+03:00";
 
+/// Alias result type for this module
 type ExcelResult<T> = std::result::Result<T, WorkbookError>;
 
+// WorkbookError is error type for this module
 #[derive(Debug)]
 pub enum WorkbookError {
     InvalidColumnNameError(String),
@@ -71,6 +80,9 @@ impl fmt::Display for WorkbookError {
     }
 }
 
+/// Prints to console active state records as json.
+/// The 'activeness' of state is determined by [is_active state]
+/// function
 #[cfg(test)]
 pub fn print_active_state_json() -> ExcelResult<()> {
     let mut workbook = open_wb()?;
@@ -85,7 +97,11 @@ pub fn print_active_state_json() -> ExcelResult<()> {
     Ok(())
 }
 
-pub fn active_state_json() -> ExcelResult<Option<String>> {
+/// Returns a json string of active state records.
+/// The 'activeness' of state is determined by [is_active state]
+/// function
+#[cfg(test)]
+fn active_state_json() -> ExcelResult<Option<String>> {
     let mut workbook = open_wb()?;
 
     if let Some(purches) = active_purchases(&mut workbook) {
@@ -95,37 +111,57 @@ pub fn active_state_json() -> ExcelResult<Option<String>> {
     }
 }
 
-pub fn active_state_json_compared(old: &str) -> ExcelResult<Option<String>> {
-    let mut workbook = open_wb()?;
-
-    let old_purches: Vec<Purchase> = serde_json::from_str(old)?;
-    if old_purches.len() == 0 {
-        return Ok(None);
-    }
-
-    let mut old_purches_map: HashMap<String, Purchase> = HashMap::with_capacity(old_purches.len());
-    for p in old_purches.into_iter() {
-        old_purches_map.insert(p.registry_number.clone(), p);
-    }
-
-    match active_purchases(&mut workbook) {
-        Some(act_purches) => {
-            let result = check_changes(old_purches_map, act_purches);
-            Ok(Some(serde_json::to_string(&result)?))
-        }
-        None => Ok(None),
-    }
+/// Converts vector of [Purchase] to json string
+pub fn to_json(purches: &Vec<Purchase>) -> ExcelResult<String> {
+    Ok(serde_json::to_string(purches)?)
 }
 
-fn check_changes(mut old: HashMap<String, Purchase>, new: Vec<Purchase>) -> Vec<Purchase> {
-    let mut result: Vec<Purchase> = Vec::new();
+/// Returns a result of comparing two sets of [Purchase]'s.
+/// The first one is expected to be a [str] from some file
+/// and considered as 'old'. The second one is expected to be
+/// result of [active_state] function and considered as 'new'.
+/// The goal is to get the records that has changed or simply new.
+pub fn active_state_json_compared(
+    old_purches: &str,
+    new_purches: &Vec<Purchase>,
+) -> ExcelResult<String> {
+    // first we deserialize first set to a vector
+    let old_purches: Vec<Purchase> = serde_json::from_str(old_purches)?;
 
-    for p in new.into_iter() {
+    // second we build a hash set from that vector
+    let mut old_purches_map: HashMap<String, Purchase> = HashMap::with_capacity(old_purches.len());
+    for p in old_purches.into_iter() {
+        old_purches_map.insert(p.registry_number.clone(), p); // this key is unique
+    }
+
+    let result = changed(&mut old_purches_map, new_purches);
+    Ok(serde_json::to_string(&result)?)
+}
+
+/// Compares two sets of data and returns resulting set
+/// of records that has changed or records that is new
+fn changed<'a>(
+    old: &'a mut HashMap<String, Purchase>,
+    new: &'a Vec<Purchase>,
+) -> Vec<&'a Purchase> {
+    let mut result: Vec<&Purchase> = Vec::new();
+
+    for p in new {
+        // if we have match on entries
+        // we remove one from the first one
         match old.remove(&p.registry_number) {
-            Some(v) if v == p => continue,
+            // than we compare if they are equal
+            Some(v) if v == *p => continue, // if so we pass on next
+            // if they are not equal or we didn't find
+            // match than we push it to result
             _ => result.push(p),
         }
     }
+
+    // if some records are left in first set
+    // than this means that they are felt off
+    // from active state and we need to include them
+    // to the result with inactive state
     for (_, mut p) in old.into_iter() {
         p.status = STATUS_NOT_GO.to_string();
         result.push(p);
@@ -134,6 +170,9 @@ fn check_changes(mut old: HashMap<String, Purchase>, new: Vec<Purchase>) -> Vec<
     result
 }
 
+/// Prints to console active state records.
+/// The 'activeness' of state is determined by [is_active state]
+/// function
 #[cfg(test)]
 pub fn print_active_state() -> ExcelResult<()> {
     let mut workbook = open_wb()?;
@@ -156,19 +195,26 @@ pub fn print_active_state() -> ExcelResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
+/// Returns a vector of active state records.
+/// The 'activeness' of state is determined by [is_active state]
+/// function
 pub fn active_state() -> ExcelResult<Option<Vec<Purchase>>> {
     let mut workbook = open_wb()?;
 
     Ok(active_purchases(&mut workbook))
 }
 
+/// Opens an excel workbook for further processing
 fn open_wb() -> ExcelResult<Xlsx<BufReader<File>>> {
     let path = Path::new(crate::WORKBOOK_PATH);
     Ok(open_workbook(path).map_err(|x| WorkbookError::XlsxError(x))?)
 }
 
+/// Returns a vector of active state [Purchase]'s if any
 fn active_purchases(workbook: &mut Xlsx<BufReader<File>>) -> Option<Vec<Purchase>> {
+    // this function heavily relias on named ranges in workbook
+    // and expected that they are equal to those that
+    // processed by [is_expectable] function
     let named_ranges = named_ranges(&workbook);
 
     let named_cols = named_cols(&named_ranges);
@@ -176,10 +222,10 @@ fn active_purchases(workbook: &mut Xlsx<BufReader<File>>) -> Option<Vec<Purchase
     match workbook.worksheet_range(&named_ranges[0].sheet) {
         Some(Ok(range)) => {
             let purches = active_state_cells(range, named_cols);
-            if purches.is_empty() {
-                None
-            } else {
+            if !purches.is_empty() {
                 Some(purches)
+            } else {
+                None
             }
         }
         _ => None,
@@ -217,6 +263,7 @@ struct NamedCols {
     participants: usize,
 }
 
+/// This type is represent a row in excel workbook
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Purchase {
     registry_number: String,
@@ -240,6 +287,7 @@ pub struct Purchase {
     participants: String,
 }
 
+// [Purchase] equivalence logic
 impl PartialEq for Purchase {
     fn eq(&self, other: &Self) -> bool {
         self.registry_number == other.registry_number
@@ -258,8 +306,8 @@ impl PartialEq for Purchase {
 
 struct NamedRange<'a> {
     name: &'a str,
-    sheet: String,
-    range: String,
+    sheet: String, // sheet portion of 'List1!$A$:$A$' == 'List1'
+    range: String, // range portion of 'List1!$A$:$A$' == '$A$:$A$'
 }
 
 impl NamedRange<'_> {
@@ -298,14 +346,17 @@ impl NamedRange<'_> {
         }
     }
 
+    /// Gets a sheet portion of name
     fn parse_sheet(s: &str) -> String {
         s.split('!').nth(0).unwrap_or_default().to_owned()
     }
 
+    /// Gets a range portion of name
     fn parse_range(s: &str) -> String {
         s.split('!').nth(1).unwrap_or_default().to_owned()
     }
 
+    /// Returns column char name
     pub fn col_name(&self, cp: ColumnPosition) -> String {
         self.range
             .split(":")
@@ -314,6 +365,7 @@ impl NamedRange<'_> {
             .replace("$", "")
     }
 
+    /// Maps column char name to column serial number e.g. 'A' == 1
     pub fn col_num(&self, cp: ColumnPosition) -> ExcelResult<usize> {
         let col_name = self.col_name(cp);
 
@@ -349,6 +401,7 @@ impl NamedRange<'_> {
     }
 }
 
+/// Returns a vector of [NamedRange]'s build up from workbook defined names
 fn named_ranges<'a>(workbook: &Xlsx<BufReader<File>>) -> Vec<NamedRange<'a>> {
     let mut named_ranges: Vec<NamedRange> = Vec::with_capacity(NAMED_RANGES_COUNT);
 
@@ -363,6 +416,8 @@ fn named_ranges<'a>(workbook: &Xlsx<BufReader<File>>) -> Vec<NamedRange<'a>> {
     named_ranges
 }
 
+/// Returns [NamedCols] struct that is represent result of
+/// mapping [NamedRange] excel char column to serial number e.g. 'A' == 1
 fn named_cols(named_ranges: &Vec<NamedRange>) -> NamedCols {
     let mut named_cols = NamedCols::default();
 
@@ -400,6 +455,7 @@ fn named_cols(named_ranges: &Vec<NamedRange>) -> NamedCols {
 fn active_state_cells(rng: Range<DataType>, cols: NamedCols) -> Vec<Purchase> {
     let cut_off_date = today_in_excel_date() - HOW_FAR_IN_PAST_DAYS as f64;
 
+    // filter active rows and those that satisfy temporal criteria
     let rows = rng.rows().take(WORKBOOK_MAX_ROWS).filter(|r| {
         match (&r[cols.status], &r[cols.bidding_date]) {
             (DataType::String(s), DataType::DateTime(dt)) => {
@@ -412,16 +468,18 @@ fn active_state_cells(rng: Range<DataType>, cols: NamedCols) -> Vec<Purchase> {
     let mut purches: Vec<Purchase> = Vec::new();
 
     for r in rows {
-        let mut bid_datetime = r[cols.bidding_datetime].get_float().unwrap_or_default();
-        let bid_date = r[cols.bidding_date].get_float().unwrap_or_default();
-        let mut col_datetime = r[cols.collecting_datetime].get_float().unwrap_or_default();
-        let col_date = r[cols.collecting_date].get_float().unwrap_or_default();
-        if bid_datetime < bid_date {
-            bid_datetime += bid_date
-        }
-        if col_datetime < col_date {
-            col_datetime += col_date
-        }
+        // if we get just time from excel cell i.e. cell value less than 1.0
+        let bid_datetime = match r[cols.bidding_datetime].get_float().unwrap_or_default() {
+            // than we take bidding_date
+            d if d < 1.0 => r[cols.bidding_date].get_float().unwrap_or_default(),
+            d => d,
+        };
+        let col_datetime = match r[cols.collecting_datetime].get_float().unwrap_or_default() {
+            d if d < 1.0 => r[cols.collecting_date].get_float().unwrap_or_default(),
+            d => d,
+        };
+
+        // get the values from the cells
         purches.push(Purchase {
             registry_number: r[cols.registry_number]
                 .get_string()
@@ -511,6 +569,17 @@ fn is_active_state(s: &str) -> bool {
     }
 }
 
+/// Converts an excel date which is just a float number
+/// to formated time string as in RFS3339
+fn from_excel_date(excel_date: f64) -> String {
+    let days = excel_date - EXCEL_UNIX_EPOCH as f64;
+    let seconds = seconds_from_days(days);
+    let duration = Duration::new(seconds, 0);
+    to_rfc3339_string(Moment::from_duration_since_epoch(duration))
+}
+
+/// Returns today's date in excel representation
+/// which is a float number
 fn today_in_excel_date() -> f64 {
     if let Ok(duration) = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         let d_since_epoch = days_from_seconds(duration.as_secs());
@@ -522,7 +591,8 @@ fn today_in_excel_date() -> f64 {
 }
 
 fn to_rfc3339_string(m: Moment) -> String {
-    // "2006-01-02T15:04:05Z07:00"
+    //  we want to build string of the form
+    // of "2006-01-02T15:04:05Z07:00"
     format!(
         "{}-{}-{}T{}:{}:00{}",
         m.year,
@@ -539,13 +609,6 @@ fn add_leading_zero(x: u64) -> String {
         return format!("0{}", x);
     }
     x.to_string()
-}
-
-fn from_excel_date(excel_date: f64) -> String {
-    let days = excel_date - EXCEL_UNIX_EPOCH as f64;
-    let seconds = seconds_from_days(days);
-    let duration = Duration::new(seconds, 0);
-    to_rfc3339_string(Moment::from_duration_since_epoch(duration))
 }
 
 const fn days_from_seconds(timestamp_secs: u64) -> u64 {
@@ -615,5 +678,41 @@ mod tests {
             from_excel_date(44516.42361),
             "2021-11-16T10:10:00+03:00".to_string()
         );
+    }
+
+    #[test]
+    fn test_is_active_state() {
+        assert!(is_active_state(STATUS_GO));
+        assert!(is_active_state(STATUS_ADMITTED));
+        assert!(is_active_state(STATUS_APPLY));
+        assert!(is_active_state(STATUS_WIN));
+        assert!(is_active_state(STATUS_LOSS));
+        assert!(!is_active_state("invalid status"))
+    }
+
+    #[test]
+    fn test_is_expectable() {
+        assert!(is_expectable(DATE_COLLECTING_BIDS));
+        assert!(is_expectable(TIME_COLLECTING_BIDS));
+        assert!(is_expectable(DATE_APPROVAL));
+        assert!(is_expectable(DATE_BIDDING));
+        assert!(is_expectable(TIME_BIDDING));
+        assert!(is_expectable(MAX_PRICE));
+        assert!(is_expectable(NUMBER));
+        assert!(is_expectable(WINNER));
+        assert!(is_expectable(STATUS));
+        assert!(is_expectable(WINNER_PRICE));
+        assert!(is_expectable(PARTICIPANTS));
+        assert!(is_expectable(PURCHASE_TYPE));
+        assert!(is_expectable(PURCHASE_SUBJECT));
+        assert!(is_expectable(PURCHASE_SUBJECT_ABBR));
+        assert!(is_expectable(OUR_PARTICIPANTS));
+        assert!(is_expectable(ETP));
+        assert!(is_expectable(APPLICATION_GUARANTEE));
+        assert!(is_expectable(CONTRACT_GUARANTEE));
+        assert!(is_expectable(CUSTOMER_TYPE));
+        assert!(is_expectable(ESTIMATION));
+        assert!(is_expectable(REGION));
+        assert!(!is_expectable("invalid name"))
     }
 }

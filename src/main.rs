@@ -20,6 +20,4 @@ fn main() {
         Ok(()) => info!("done"),
         Err(e) => error!("{:?}", &e),
     };
-    // let p = excel::active_state_json().unwrap().unwrap();
-    // println!("{:?}", p)
 }

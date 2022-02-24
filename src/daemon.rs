@@ -21,6 +21,7 @@ fn last_modified_time(path: &Path) -> std::io::Result<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified())
 }
 
+/// Reads content of the file to string
 fn file_content(path: &Path) -> std::io::Result<String> {
     let mut file = File::open(&path)?;
     let mut s = String::new();
@@ -28,12 +29,14 @@ fn file_content(path: &Path) -> std::io::Result<String> {
     Ok(s)
 }
 
+/// Writes string to file
 fn write_to_file(path: &Path, s: String) -> std::io::Result<()> {
     let mut file = File::create(&path)?;
     file.write_all(s.as_bytes())?;
     Ok(())
 }
 
+/// Sends json post request to remote app url
 fn send(client: &Client, json: String) -> Result<(), reqwest::Error> {
     let res = client
         .post(crate::APP_URL)
@@ -53,9 +56,14 @@ fn send(client: &Client, json: String) -> Result<(), reqwest::Error> {
     }
 }
 
+/// Checks a file for changes every time that is specified by [TIME_TO_SLEEP].
+/// This daemon has it's own litlle presistent store which is a file with
+/// result of previous checking. So if the change of the file is detected,
+/// than it either compare previous result with the new one or just take new one
+/// and send it to the remote app url (which is where database resides)
 pub fn watch(file_path: &str) -> Result<(), DaemonError> {
     let path = Path::new(file_path);
-    let temp_path = Path::new(TEMP_FILE_PATH);
+    let temp_path = Path::new(TEMP_FILE_PATH); // path of the storage file
 
     let sleep_time = time::Duration::from_secs(TIME_TO_SLEEP);
 
@@ -76,30 +84,40 @@ pub fn watch(file_path: &str) -> Result<(), DaemonError> {
 
         info!("file change detected");
 
+        // we get active state records from the file
+        let new_snapshot = match excel::active_state() {
+            Ok(Some(s)) => s,
+            Ok(None) => continue,
+            Err(e) => return Err(e.into()),
+        };
+
+        // if we have a temp file with previous records
+        // than we compare old with new and gets result set
         let json = if temp_path.exists() {
-            let content = file_content(temp_path)?;
-            match excel::active_state_json_compared(&content) {
-                Ok(Some(s)) => s,
-                Ok(None) => continue,
+            let old_snapshot = file_content(temp_path)?;
+            match excel::active_state_json_compared(&old_snapshot, &new_snapshot) {
+                Ok(s) => s,
                 Err(e) => return Err(e.into()),
             }
         } else {
-            match excel::active_state_json() {
-                Ok(Some(s)) => s,
-                Ok(None) => continue,
-                Err(e) => return Err(e.into()),
-            }
+            excel::to_json(&new_snapshot)? // or we just take new records
         };
 
-        if let Err(_) = send(&client, json.clone()) {
+        // if we have an error from remote database
+        // than error is logged by send function
+        if let Err(_) = send(&client, json) {
             continue;
         }
 
-        write_to_file(temp_path, json)?;
+        let new_snapshot = excel::to_json(&new_snapshot)?;
+
+        write_to_file(temp_path, new_snapshot)?;
         last_mod_time = time_checked;
     }
 }
 
+/// DaemonError is the wrapper around
+/// either [std::io::Error] or [excel::WorkbookError]
 #[derive(Debug)]
 pub enum DaemonError {
     IoError(std::io::Error),
