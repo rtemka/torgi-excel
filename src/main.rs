@@ -5,9 +5,6 @@ use env_logger;
 use log::{error, info};
 use std::env;
 
-const WORKBOOK_PATH: &str = "//rsphnas/Inbox/упр.мод/Форматы/Форматы/Форматы отд. торгов/Форматы отд. торгов/Реестр 2022.xlsx";
-const APP_URL: &str = "https://torgi-contracts-bot.herokuapp.com/KMZ4aV0pffnvepuQY3YsGIYghtsy1Thq";
-
 /// Logger initialization
 fn enable_logger() {
     env::set_var("RUST_LOG", "info");
@@ -16,7 +13,11 @@ fn enable_logger() {
 
 fn main() {
     enable_logger();
-    match daemon::watch(WORKBOOK_PATH) {
+
+    let wb_path = env::var("REG_WORKBOOK_PATH").expect("$REG_WORKBOOK_PATH must be set");
+    let app_url = env::var("TGBOT_APP_URL").expect("$TGBOT_APP_URL must be set");
+
+    match daemon::watch(&wb_path, &app_url) {
         Ok(()) => info!("done"),
         Err(e) => error!("{:?}", &e),
     };

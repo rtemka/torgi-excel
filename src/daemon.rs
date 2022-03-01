@@ -12,7 +12,7 @@ use std::{
 use crate::excel;
 
 /// Daemon sleep interval in seconds
-const TIME_TO_SLEEP: u64 = 10 * 60;
+const TIME_TO_SLEEP: u64 = 1 * 60;
 
 const TEMP_FILE_PATH: &str = "temp.json";
 
@@ -37,9 +37,9 @@ fn write_to_file(path: &Path, s: String) -> std::io::Result<()> {
 }
 
 /// Sends json post request to remote app url
-fn send(client: &Client, json: String) -> Result<(), reqwest::Error> {
+fn send(client: &Client, url: &str, json: String) -> Result<(), reqwest::Error> {
     let res = client
-        .post(crate::APP_URL)
+        .post(url)
         .header(CONTENT_TYPE, "application/json")
         .body(json)
         .send();
@@ -61,7 +61,7 @@ fn send(client: &Client, json: String) -> Result<(), reqwest::Error> {
 /// result of previous checking. So if the change of the file is detected,
 /// than it either compare previous result with the new one or just take new one
 /// and send it to the remote app url (which is where database resides)
-pub fn watch(file_path: &str) -> Result<(), DaemonError> {
+pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
     let path = Path::new(file_path);
     let temp_path = Path::new(TEMP_FILE_PATH); // path of the storage file
 
@@ -85,7 +85,7 @@ pub fn watch(file_path: &str) -> Result<(), DaemonError> {
         info!("file change detected");
 
         // we get active state records from the file
-        let new_snapshot = match excel::active_state() {
+        let new_snapshot = match excel::active_state(&path) {
             Ok(Some(s)) => s,
             Ok(None) => continue,
             Err(e) => return Err(e.into()),
@@ -105,7 +105,7 @@ pub fn watch(file_path: &str) -> Result<(), DaemonError> {
 
         // if we have an error from remote database
         // than error is logged by send function
-        if let Err(_) = send(&client, json) {
+        if let Err(_) = send(&client, to_send_url, json) {
             continue;
         }
 

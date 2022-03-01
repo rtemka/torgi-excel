@@ -1,6 +1,8 @@
 use crate::simple_time::Moment;
 use calamine::{open_workbook, DataType, Range, Reader, Xlsx, XlsxError};
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
+use std::env;
 use std::{
     collections::HashMap,
     fmt,
@@ -51,7 +53,7 @@ const HOW_FAR_IN_PAST_DAYS: u64 = 16;
 
 // 01.01.1970 in excel representation
 const EXCEL_UNIX_EPOCH: u64 = 25569;
-const FILE_UTC_TIME_OFFSET: &str = "+03:00";
+const FILE_UTC_TIME_OFFSET: &str = "+00:00";
 
 /// Alias result type for this module
 type ExcelResult<T> = std::result::Result<T, WorkbookError>;
@@ -84,8 +86,8 @@ impl fmt::Display for WorkbookError {
 /// The 'activeness' of state is determined by [is_active state]
 /// function
 #[cfg(test)]
-pub fn print_active_state_json() -> ExcelResult<()> {
-    let mut workbook = open_wb()?;
+pub fn print_active_state_json(wb_path: &Path) -> ExcelResult<()> {
+    let mut workbook = open_wb(wb_path)?;
 
     if let Some(purches) = active_purchases(&mut workbook) {
         println!("{}", purches.len());
@@ -101,8 +103,8 @@ pub fn print_active_state_json() -> ExcelResult<()> {
 /// The 'activeness' of state is determined by [is_active state]
 /// function
 #[cfg(test)]
-fn active_state_json() -> ExcelResult<Option<String>> {
-    let mut workbook = open_wb()?;
+fn active_state_json(wb_path: &Path) -> ExcelResult<Option<String>> {
+    let mut workbook = open_wb(wb_path)?;
 
     if let Some(purches) = active_purchases(&mut workbook) {
         Ok(Some(serde_json::to_string(&purches)?))
@@ -174,8 +176,8 @@ fn changed<'a>(
 /// The 'activeness' of state is determined by [is_active state]
 /// function
 #[cfg(test)]
-pub fn print_active_state() -> ExcelResult<()> {
-    let mut workbook = open_wb()?;
+pub fn print_active_state(wb_path: &Path) -> ExcelResult<()> {
+    let mut workbook = open_wb(wb_path)?;
 
     if let Some(purches) = active_purchases(&mut workbook) {
         for p in purches {
@@ -198,16 +200,16 @@ pub fn print_active_state() -> ExcelResult<()> {
 /// Returns a vector of active state records.
 /// The 'activeness' of state is determined by [is_active state]
 /// function
-pub fn active_state() -> ExcelResult<Option<Vec<Purchase>>> {
-    let mut workbook = open_wb()?;
+pub fn active_state(wb_path: &Path) -> ExcelResult<Option<Vec<Purchase>>> {
+    let mut workbook = open_wb(wb_path)?;
 
     Ok(active_purchases(&mut workbook))
 }
 
 /// Opens an excel workbook for further processing
-fn open_wb() -> ExcelResult<Xlsx<BufReader<File>>> {
-    let path = Path::new(crate::WORKBOOK_PATH);
-    Ok(open_workbook(path).map_err(|x| WorkbookError::XlsxError(x))?)
+fn open_wb(wb_path: &Path) -> ExcelResult<Xlsx<BufReader<File>>> {
+    // let path = Path::new(path);
+    Ok(open_workbook(wb_path).map_err(|x| WorkbookError::XlsxError(x))?)
 }
 
 /// Returns a vector of active state [Purchase]'s if any
@@ -626,27 +628,32 @@ mod tests {
 
     #[test]
     fn test_print_active_state() {
-        assert!(print_active_state().is_ok());
+        let wb_path = env::var("REG_WORKBOOK_PATH").expect("$REG_WORKBOOK_PATH must be set");
+        assert!(print_active_state(Path::new(&wb_path)).is_ok());
     }
 
     #[test]
     fn test_print_active_state_json() {
-        assert!(print_active_state_json().is_ok());
+        let wb_path = env::var("REG_WORKBOOK_PATH").expect("$REG_WORKBOOK_PATH must be set");
+        assert!(print_active_state_json(Path::new(&wb_path)).is_ok());
     }
 
     #[test]
     fn test_active_state_json() {
-        assert!(active_state_json().is_ok());
+        let wb_path = env::var("REG_WORKBOOK_PATH").expect("$REG_WORKBOOK_PATH must be set");
+        assert!(active_state_json(Path::new(&wb_path)).is_ok());
     }
 
     #[test]
     fn test_active_state() {
-        assert!(active_state().is_ok());
+        let wb_path = env::var("REG_WORKBOOK_PATH").expect("$REG_WORKBOOK_PATH must be set");
+        assert!(active_state(Path::new(&wb_path)).is_ok());
     }
 
     #[test]
     fn test_open_wb() {
-        assert!(open_wb().is_ok());
+        let wb_path = env::var("REG_WORKBOOK_PATH").expect("$REG_WORKBOOK_PATH must be set");
+        assert!(open_wb(Path::new(&wb_path)).is_ok());
     }
 
     #[test]
