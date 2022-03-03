@@ -97,7 +97,7 @@ impl Moment {
 /// Unix timestamp / hours in a year to get years from 1970 to timestamp
 const fn year(timestamp_secs: u64) -> u64 {
     //31436000 hours in a year
-    (timestamp_secs / 31436000) + 1969
+    (timestamp_secs / 31536000) + 1970
 }
 
 /// Determine number of extra days from leap years since 1970

@@ -675,7 +675,7 @@ mod tests {
         };
         assert_eq!(
             to_rfc3339_string(m),
-            "2021-11-10T12:01:00+03:00".to_string()
+            "2021-11-10T12:01:00+00:00".to_string()
         );
     }
 
@@ -683,7 +683,7 @@ mod tests {
     fn test_from_excel_date() {
         assert_eq!(
             from_excel_date(44516.42361),
-            "2021-11-16T10:10:00+03:00".to_string()
+            "2021-11-16T10:10:00+00:00".to_string()
         );
     }
 
