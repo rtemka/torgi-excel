@@ -53,7 +53,6 @@ const HOW_FAR_IN_PAST_DAYS: u64 = 16;
 
 // 01.01.1970 in excel representation
 const EXCEL_UNIX_EPOCH: u64 = 25569;
-const FILE_UTC_TIME_OFFSET: &str = "+00:00";
 
 /// Alias result type for this module
 type ExcelResult<T> = std::result::Result<T, WorkbookError>;
@@ -577,7 +576,7 @@ fn from_excel_date(excel_date: f64) -> String {
     let days = excel_date - EXCEL_UNIX_EPOCH as f64;
     let seconds = seconds_from_days(days);
     let duration = Duration::new(seconds, 0);
-    to_rfc3339_string(Moment::from_duration_since_epoch(duration))
+    Moment::from_duration_since_epoch(duration).to_string()
 }
 
 /// Returns today's date in excel representation
@@ -590,27 +589,6 @@ fn today_in_excel_date() -> f64 {
     } else {
         0.0
     }
-}
-
-fn to_rfc3339_string(m: Moment) -> String {
-    //  we want to build string of the form
-    // of "2006-01-02T15:04:05Z07:00"
-    format!(
-        "{}-{}-{}T{}:{}:00{}",
-        m.year,
-        add_leading_zero(m.month),
-        add_leading_zero(m.day),
-        add_leading_zero(m.hours),
-        add_leading_zero(m.minutes),
-        FILE_UTC_TIME_OFFSET
-    )
-}
-
-fn add_leading_zero(x: u64) -> String {
-    if x < 10 {
-        return format!("0{}", x);
-    }
-    x.to_string()
 }
 
 const fn days_from_seconds(timestamp_secs: u64) -> u64 {
@@ -657,33 +635,18 @@ mod tests {
     }
 
     #[test]
-    fn test_add_leading_zero() {
-        assert_eq!(add_leading_zero(9), "09".to_string());
-        assert_eq!(add_leading_zero(11), "11".to_string());
-    }
-
-    #[test]
-    fn test_to_rfc3339_string() {
-        let m = Moment {
-            year: 2021,
-            month: 11,
-            day: 10,
-            hours: 12,
-            minutes: 1,
-            seconds: 44,
-            is_leap_year: false,
-        };
-        assert_eq!(
-            to_rfc3339_string(m),
-            "2021-11-10T12:01:00+00:00".to_string()
-        );
-    }
-
-    #[test]
     fn test_from_excel_date() {
         assert_eq!(
             from_excel_date(44516.42361),
             "2021-11-16T10:10:00+00:00".to_string()
+        );
+        assert_eq!(
+            from_excel_date(44621.00),
+            "2022-03-01T00:00:00+00:00".to_string()
+        );
+        assert_eq!(
+            from_excel_date(43890.4166666667),
+            "2020-02-29T10:00:00+00:00".to_string()
         );
     }
 

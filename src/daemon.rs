@@ -1,3 +1,4 @@
+use crate::{excel, simple_time};
 use log::{error, info};
 use reqwest::{blocking::Client, header::CONTENT_TYPE};
 use std::{
@@ -9,10 +10,8 @@ use std::{
     time::{self, SystemTime},
 };
 
-use crate::excel;
-
 /// Daemon sleep interval in seconds
-const TIME_TO_SLEEP: u64 = 1 * 60;
+const TIME_TO_SLEEP: u64 = 10;
 
 const TEMP_FILE_PATH: &str = "temp.json";
 
@@ -56,6 +55,13 @@ fn send(client: &Client, url: &str, json: String) -> Result<(), reqwest::Error> 
     }
 }
 
+fn print_time(sys_time: SystemTime) {
+    match simple_time::Moment::from_sys_time(sys_time) {
+        Some(m) => info!("last modification time is: {}", m.to_string()),
+        None => info!("could't parse time from system time"),
+    };
+}
+
 /// Checks a file for changes every time that is specified by [TIME_TO_SLEEP].
 /// This daemon has it's own litlle presistent store which is a file with
 /// result of previous checking. So if the change of the file is detected,
@@ -69,7 +75,7 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
 
     let mut last_mod_time = last_modified_time(&path)?;
 
-    info!("last modification time is set to: {:?}", last_mod_time);
+    print_time(last_mod_time);
 
     let client = Client::new();
 
