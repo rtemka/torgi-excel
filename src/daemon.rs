@@ -1,4 +1,5 @@
 use crate::{excel, simple_time};
+use ctrlc;
 use log::{error, info};
 use reqwest::{blocking::Client, header::CONTENT_TYPE};
 use std::{
@@ -6,12 +7,13 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
+    sync::{Arc, Mutex},
     thread,
     time::{self, SystemTime},
 };
 
 /// Daemon sleep interval in seconds
-const TIME_TO_SLEEP: u64 = 10;
+const TIME_TO_SLEEP: u64 = 30;
 
 const TEMP_FILE_PATH: &str = "temp.json";
 
@@ -32,6 +34,14 @@ fn file_content(path: &Path) -> std::io::Result<String> {
 fn write_to_file(path: &Path, s: String) -> std::io::Result<()> {
     let mut file = File::create(&path)?;
     file.write_all(s.as_bytes())?;
+    Ok(())
+}
+
+/// Removes program temporary file
+fn rm_file(temp_path: &Path) -> std::io::Result<()> {
+    if temp_path.exists() {
+        fs::remove_file(temp_path)?
+    }
     Ok(())
 }
 
@@ -58,8 +68,18 @@ fn send(client: &Client, url: &str, json: String) -> Result<(), reqwest::Error> 
 fn print_time(sys_time: SystemTime) {
     match simple_time::Moment::from_sys_time(sys_time) {
         Some(m) => info!("last modification time is: {}", m.to_string()),
-        None => info!("could't parse time from system time"),
+        None => info!("couldn't parse time from system time"),
     };
+}
+
+/// Ctrl+C signal handling logic
+fn interrupt_handler(sig_flag: Arc<Mutex<bool>>) -> Result<(), DaemonError> {
+    let handler = move || {
+        info!("received Ctrl+C, exiting...");
+        *sig_flag.lock().unwrap() = true;
+    };
+    ctrlc::set_handler(handler).map_err(|_| DaemonError::SetSignalError)?;
+    Ok(())
 }
 
 /// Checks a file for changes every time that is specified by [TIME_TO_SLEEP].
@@ -75,11 +95,15 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
 
     let mut last_mod_time = last_modified_time(&path)?;
 
-    print_time(last_mod_time);
-
     let client = Client::new();
 
-    loop {
+    // Ctrl+C handling
+    let interrupt_sig_handler = Arc::new(Mutex::new(false));
+    let interrupt_sig_main = interrupt_sig_handler.clone();
+    interrupt_handler(interrupt_sig_handler)?;
+
+    while *interrupt_sig_main.lock().unwrap() != true {
+        print_time(last_mod_time);
         thread::sleep(sleep_time);
 
         let time_checked = last_modified_time(&path)?;
@@ -120,12 +144,18 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
         write_to_file(temp_path, new_snapshot)?;
         last_mod_time = time_checked;
     }
+
+    info!("removing any temp files...");
+    rm_file(temp_path)?; // remove temp files
+
+    Ok(())
 }
 
 /// DaemonError is the wrapper around
 /// either [std::io::Error] or [excel::WorkbookError]
 #[derive(Debug)]
 pub enum DaemonError {
+    SetSignalError,
     IoError(std::io::Error),
     WorkBookError(excel::WorkbookError),
 }
@@ -147,6 +177,7 @@ impl fmt::Display for DaemonError {
         match self {
             DaemonError::WorkBookError(e) => write!(f, "{:?}", &e),
             DaemonError::IoError(e) => write!(f, "{:?}", &e),
+            DaemonError::SetSignalError => write!(f, "error setting Ctrl-C handler"),
         }
     }
 }

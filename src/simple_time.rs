@@ -48,7 +48,8 @@ pub struct Moment {
 
 impl Moment {
     /// Returns option of Moment from now
-    pub fn new() -> Option<Self> {
+    #[allow(dead_code)]
+    pub fn now() -> Option<Self> {
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
