@@ -40,6 +40,7 @@ const STATUS_ADMITTED: &str = "допущены";
 const STATUS_APPLY: &str = "заявлены";
 const STATUS_WIN: &str = "выиграли";
 const STATUS_LOSS: &str = "не выиграли";
+const STATUS_ESTIMATION: &str = "расчет";
 const NAMED_RANGES_COUNT: usize = 20;
 const RADIX: u32 = 36;
 
@@ -125,7 +126,7 @@ pub fn to_json(purches: &Vec<Purchase>) -> ExcelResult<String> {
 pub fn active_state_json_compared(
     old_purches: &str,
     new_purches: &Vec<Purchase>,
-) -> ExcelResult<String> {
+) -> ExcelResult<Option<String>> {
     // first we deserialize first set to a vector
     let old_purches: Vec<Purchase> = serde_json::from_str(old_purches)?;
 
@@ -136,7 +137,10 @@ pub fn active_state_json_compared(
     }
 
     let result = changed(&mut old_purches_map, new_purches);
-    Ok(serde_json::to_string(&result)?)
+    if result.len() == 0 {
+        return Ok(None)
+    }
+    Ok(Some(serde_json::to_string(&result)?))
 }
 
 /// Compares two sets of data and returns resulting set
@@ -566,6 +570,7 @@ fn is_active_state(s: &str) -> bool {
         STATUS_APPLY => true,
         STATUS_WIN => true,
         STATUS_LOSS => true,
+        STATUS_ESTIMATION => true,
         _ => false,
     }
 }
@@ -657,6 +662,7 @@ mod tests {
         assert!(is_active_state(STATUS_APPLY));
         assert!(is_active_state(STATUS_WIN));
         assert!(is_active_state(STATUS_LOSS));
+        assert!(is_active_state(STATUS_ESTIMATION));
         assert!(!is_active_state("invalid status"))
     }
 

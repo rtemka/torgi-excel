@@ -102,8 +102,9 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
     let interrupt_sig_main = interrupt_sig_handler.clone();
     interrupt_handler(interrupt_sig_handler)?;
 
+    info!("start watching to '{}'", &file_path);
+
     while *interrupt_sig_main.lock().unwrap() != true {
-        print_time(last_mod_time);
         thread::sleep(sleep_time);
 
         let time_checked = last_modified_time(&path)?;
@@ -126,7 +127,13 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
         let json = if temp_path.exists() {
             let old_snapshot = file_content(temp_path)?;
             match excel::active_state_json_compared(&old_snapshot, &new_snapshot) {
-                Ok(s) => s,
+                Ok(Some(s)) => s,
+                Ok(None) => {
+                    info!("no changes in records");
+                    last_mod_time = time_checked;
+                    print_time(last_mod_time);
+                    continue;
+                }
                 Err(e) => return Err(e.into()),
             }
         } else {
@@ -143,6 +150,7 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
 
         write_to_file(temp_path, new_snapshot)?;
         last_mod_time = time_checked;
+        print_time(last_mod_time);
     }
 
     info!("removing any temp files...");
