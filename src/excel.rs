@@ -138,7 +138,7 @@ pub fn active_state_json_compared(
 
     let result = changed(&mut old_purches_map, new_purches);
     if result.len() == 0 {
-        return Ok(None)
+        return Ok(None);
     }
     Ok(Some(serde_json::to_string(&result)?))
 }
@@ -652,6 +652,10 @@ mod tests {
         assert_eq!(
             from_excel_date(43890.4166666667),
             "2020-02-29T10:00:00+00:00".to_string()
+        );
+        assert_eq!(
+            from_excel_date(44713.00),
+            "2022-06-01T00:00:00+00:00".to_string()
         );
     }
 

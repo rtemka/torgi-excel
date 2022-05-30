@@ -173,15 +173,15 @@ const fn day_and_month(days_in_current_year: u64, is_leap_year: bool) -> (u64, u
     match days_in_current_year {
         d if d <= 31 => (d, JANUARY.0 as u64),
         d if d <= (59 + add_day) => (d - 31, FEBRUARY.0 as u64),
-        d if d <= (91 + add_day) => (d - (59 + add_day), MARCH.0 as u64),
-        d if d <= (121 + add_day) => (d - (90 + add_day), APRIL.0 as u64),
-        d if d <= (152 + add_day) => (d - (120 + add_day), MAY.0 as u64),
-        d if d <= (182 + add_day) => (d - (151 + add_day), JUNE.0 as u64),
-        d if d <= (213 + add_day) => (d - (181 + add_day), JULY.0 as u64),
-        d if d <= (244 + add_day) => (d - (212 + add_day), AUGUST.0 as u64),
-        d if d <= (274 + add_day) => (d - (243 + add_day), SEPTEMBER.0 as u64),
-        d if d <= (305 + add_day) => (d - (273 + add_day), OCTOBER.0 as u64),
-        d if d <= (335 + add_day) => (d - (304 + add_day), NOVEMBER.0 as u64),
+        d if d <= (90 + add_day) => (d - (59 + add_day), MARCH.0 as u64),
+        d if d <= (120 + add_day) => (d - (90 + add_day), APRIL.0 as u64),
+        d if d <= (151 + add_day) => (d - (120 + add_day), MAY.0 as u64),
+        d if d <= (181 + add_day) => (d - (151 + add_day), JUNE.0 as u64),
+        d if d <= (212 + add_day) => (d - (181 + add_day), JULY.0 as u64),
+        d if d <= (243 + add_day) => (d - (212 + add_day), AUGUST.0 as u64),
+        d if d <= (273 + add_day) => (d - (243 + add_day), SEPTEMBER.0 as u64),
+        d if d <= (304 + add_day) => (d - (273 + add_day), OCTOBER.0 as u64),
+        d if d <= (334 + add_day) => (d - (304 + add_day), NOVEMBER.0 as u64),
         d if d <= (365 + add_day) => (d - (334 + add_day), DECEMBER.0 as u64),
         _ => (0, 0),
     }
@@ -276,6 +276,56 @@ mod tests {
         let m = Moment::from_duration_since_epoch(d);
         assert_eq!(
             (2020, 3, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+
+        let d = Duration::from_secs(1654041600);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2022, 6, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+
+        let d = Duration::from_secs(1656633600);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2022, 7, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+        let d = Duration::from_secs(1659312000);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2022, 8, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+        let d = Duration::from_secs(1661990400);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2022, 9, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+        let d = Duration::from_secs(1664582400);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2022, 10, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+        let d = Duration::from_secs(1667260800);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2022, 11, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+        let d = Duration::from_secs(1669852800);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2022, 12, 1, 0, 0, 0),
+            (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
+        );
+        let d = Duration::from_secs(1672531200);
+        let m = Moment::from_duration_since_epoch(d);
+        assert_eq!(
+            (2023, 1, 1, 0, 0, 0),
             (m.year, m.month, m.day, m.hours, m.minutes, m.seconds)
         );
     }
