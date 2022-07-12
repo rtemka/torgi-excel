@@ -108,7 +108,10 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
 
     let mut retries = 0;
 
-    while *interrupt_sig_main.lock().unwrap() != true || retries < RETRY_THRESHOLD {
+    while *interrupt_sig_main.lock().unwrap() != true {
+        if retries >= RETRY_THRESHOLD {
+            break;
+        }
         thread::sleep(sleep_time);
 
         let time_checked = match last_modified_time(&path) {
