@@ -17,6 +17,8 @@ const TIME_TO_SLEEP: u64 = 30;
 
 const TEMP_FILE_PATH: &str = "temp.json";
 
+const RETRY_THRESHOLD: i32 = 20;
+
 /// Returns last modification time of a file or [std::io::Error]
 fn last_modified_time(path: &Path) -> std::io::Result<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified())
@@ -104,10 +106,21 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
 
     info!("start watching to '{}'", &file_path);
 
-    while *interrupt_sig_main.lock().unwrap() != true {
+    let mut retries = 0;
+
+    while *interrupt_sig_main.lock().unwrap() != true || retries < RETRY_THRESHOLD {
         thread::sleep(sleep_time);
 
-        let time_checked = last_modified_time(&path)?;
+        let time_checked = match last_modified_time(&path) {
+            Ok(t) => {
+                retries = 0;
+                t
+            }
+            Err(_) => {
+                retries += 1;
+                continue;
+            }
+        };
 
         if time_checked.eq(&last_mod_time) {
             continue;
@@ -117,9 +130,19 @@ pub fn watch(file_path: &str, to_send_url: &str) -> Result<(), DaemonError> {
 
         // we get active state records from the file
         let new_snapshot = match excel::active_state(&path) {
-            Ok(Some(s)) => s,
-            Ok(None) => continue,
-            Err(e) => return Err(e.into()),
+            Ok(Some(s)) => {
+                retries = 0;
+                s
+            }
+            Ok(None) => {
+                retries = 0;
+                continue;
+            }
+            Err(e) => {
+                error!("error while reading workbook: {:?}", &e);
+                retries += 1;
+                continue;
+            }
         };
 
         // if we have a temp file with previous records
